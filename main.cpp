@@ -2,7 +2,14 @@
 #include <iostream>
 #include <vector>
 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <cstring>
+#include <arpa/inet.h>
+#include <unistd.h>
+
 #define DEBUG 1
+#define WAVE_HEADER_LEN 44
 // A struct to hold the RIFF data of the WAV file
 struct WaveFile {
     char riff_header[4]; // Contains "RIFF"
@@ -64,7 +71,7 @@ int parse_audio(struct AudioConverter* ctx)
         return 1;
     }
 
-    file.read(reinterpret_cast<char*>(ctx->m_wav), sizeof(struct WaveFile));
+    file.read(reinterpret_cast<char*>(ctx->m_wav), WAVE_HEADER_LEN);
 
 #if defined(DEBUG)
     std::cout << "** Header information of the file **" << std::endl;
@@ -83,6 +90,39 @@ int parse_audio(struct AudioConverter* ctx)
     file.close();
 
     return 0; 
+}
+
+int broadcast_on_udp(struct AudioConverter* ctx)
+{
+
+    int sockfd;
+    struct sockaddr_in server_addr;
+
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("socket creation failed");
+        return EXIT_FAILURE;
+    }
+
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(ctx->m_port); // port number
+
+    if(inet_pton(AF_INET, ctx->m_ip.c_str() , &server_addr.sin_addr.s_addr) <= 0)
+    {
+        std::cerr << "Invalid IP address" << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    const size_t max_data_length = 480; // For example
+    for (size_t i = 0; i < ctx->m_wav->audio_len; i += max_data_length) {
+        size_t length = std::min(max_data_length, ctx->m_wav->audio_len - i);
+        sendto(sockfd, &ctx->m_wav->audio_bytes[i], length, MSG_CONFIRM,
+               (const struct sockaddr *) &server_addr, sizeof(server_addr));
+        // usleep(ctx->m_delay*1000);
+    }
+
+    close(sockfd);
+    return EXIT_SUCCESS;
 }
 
 int free_converter(struct AudioConverter* ctx)
@@ -120,9 +160,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    for(int i = 0; i < 10; i++)
-        std::cout << std::to_string( converter->m_wav->audio_bytes[i] ) << ", ";
+    // for(int i = 0; i < 10; i++)
+    //     std::cout << std::to_string( converter->m_wav->audio_bytes[i] ) << ", ";
 
-
+    broadcast_on_udp(converter);
+    
     return 0;
 }
