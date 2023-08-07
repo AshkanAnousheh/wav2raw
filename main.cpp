@@ -10,8 +10,7 @@
 
 #define DEBUG 1
 #define WAVE_HEADER_LEN 44
-//                                  2,3             4,5,6,7           8,9,10,11
-// const char sof[] = {0x80, 0x60, sequence number, 32 bit timestamp , 32 bit rnd, rest of bytes };
+                                //  2,3             4,5,6,7           8,9,10,11
 // A struct to hold the RIFF data of the WAV file
 struct WaveFile {
     char riff_header[4]; // Contains "RIFF"
@@ -115,11 +114,47 @@ int broadcast_on_udp(struct AudioConverter* ctx)
         return EXIT_FAILURE;
     }
 
+
+    uint16_t sequence_number = 0;
+    uint32_t timestamp = 0;
+    uint32_t rand_number = 0;
+
+    char sof[12] = {0};
+
+
     const size_t max_data_length = 480; // For example
+    char* buffer = (char*) malloc(max_data_length + sizeof(sof));
+    
     for (size_t i = 0; i < ctx->m_wav->audio_len; i += max_data_length) {
+        sof[0] = 0x80;
+        sof[1] = 0x60;
+        sof[2] = (sequence_number&0xFF00)>>8;
+        sof[3] = (sequence_number&0xFF);
+        sof[4] = (timestamp&0xFF000000)>>24;
+        sof[5] = (timestamp&0xFF0000)>>16;
+        sof[6] = (timestamp&0xFF00)>>8;
+        sof[7] = (timestamp&0xFF);
+        sof[8] = 0x80;
+        sof[9] = 0;
+        sof[10] = 0;
+        sof[11] = 0x80;
+        
         size_t length = std::min(max_data_length, ctx->m_wav->audio_len - i);
-        sendto(sockfd, &ctx->m_wav->audio_bytes[i], length, MSG_CONFIRM,
+        memcpy(buffer, sof, 12);
+        // memcpy(&buffer[12], &ctx->m_wav->audio_bytes[i], max_data_length);
+        for(int i = 0 ; i < length/2 ; i++)
+        {
+            buffer[2*i+12] = ctx->m_wav->audio_bytes[2*i+1];
+        }
+        for(int i = 0 ; i < length/2 ; i++)
+        {
+            buffer[2*i+13] = ctx->m_wav->audio_bytes[2*i];
+        }
+
+        sendto(sockfd, buffer, length+12, MSG_CONFIRM,
                (const struct sockaddr *) &server_addr, sizeof(server_addr));
+        sequence_number++;
+        timestamp += 120;
         if(ctx->m_delay > 0)
             usleep(ctx->m_delay*1000);
     }
