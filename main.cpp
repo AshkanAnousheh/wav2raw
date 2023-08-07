@@ -10,6 +10,8 @@
 
 #define DEBUG 1
 #define WAVE_HEADER_LEN 44
+//                                  2,3             4,5,6,7           8,9,10,11
+// const char sof[] = {0x80, 0x60, sequence number, 32 bit timestamp , 32 bit rnd, rest of bytes };
 // A struct to hold the RIFF data of the WAV file
 struct WaveFile {
     char riff_header[4]; // Contains "RIFF"
