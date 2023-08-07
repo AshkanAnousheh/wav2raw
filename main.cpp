@@ -68,7 +68,7 @@ int parse_audio(struct AudioConverter* ctx)
     std::ifstream file(ctx->m_file, std::ios::binary | std::ios::in);
     if (!file.is_open()) {
         std::cout << "Could not open file!\n";
-        return 1;
+        return EXIT_FAILURE;
     }
 
     file.read(reinterpret_cast<char*>(ctx->m_wav), WAVE_HEADER_LEN);
@@ -89,7 +89,7 @@ int parse_audio(struct AudioConverter* ctx)
 
     file.close();
 
-    return 0; 
+    return EXIT_SUCCESS; 
 }
 
 int broadcast_on_udp(struct AudioConverter* ctx)
@@ -118,7 +118,8 @@ int broadcast_on_udp(struct AudioConverter* ctx)
         size_t length = std::min(max_data_length, ctx->m_wav->audio_len - i);
         sendto(sockfd, &ctx->m_wav->audio_bytes[i], length, MSG_CONFIRM,
                (const struct sockaddr *) &server_addr, sizeof(server_addr));
-        // usleep(ctx->m_delay*1000);
+        if(ctx->m_delay > 0)
+            usleep(ctx->m_delay*1000);
     }
 
     close(sockfd);
@@ -139,7 +140,7 @@ int free_converter(struct AudioConverter* ctx)
         }
         free(ctx);
     }
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 int main(int argc, char* argv[]) {
@@ -149,7 +150,7 @@ int main(int argc, char* argv[]) {
     {
         std::cerr << "Invalid argument number" << std::endl;
         free_converter(converter);
-        return 1;
+        return EXIT_FAILURE;
     }
 
     auto parsed_audio = parse_audio(converter);
@@ -157,13 +158,16 @@ int main(int argc, char* argv[]) {
     {
         std::cerr << "Invalid file" << std::endl;
         free_converter(converter);
-        return 1;
+        return EXIT_FAILURE;
     }
 
-    // for(int i = 0; i < 10; i++)
-    //     std::cout << std::to_string( converter->m_wav->audio_bytes[i] ) << ", ";
-
-    broadcast_on_udp(converter);
+    if(broadcast_on_udp(converter) != EXIT_SUCCESS)
+    {
+        std::cerr << "Socket creation error" << std::endl;
+        free_converter(converter);
+        return EXIT_FAILURE;
+    }
     
-    return 0;
+    free_converter(converter);
+    return EXIT_SUCCESS;
 }
