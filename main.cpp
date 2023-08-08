@@ -66,6 +66,14 @@ struct AudioConverter* init(int argc, char* argv[])
 int parse_audio(struct AudioConverter* ctx)
 {
 
+    // uint16_t t = 0;
+    // std::ofstream file2("t.bin", std::ios::binary | std::ios::out);
+    // for(t ; t < 0xFFFF ; t++)
+    // {
+    //     file2.write((char*)&t, 2);
+    // }
+    // file2.close();
+
     std::ifstream file(ctx->m_file, std::ios::binary | std::ios::in);
     if (!file.is_open()) {
         std::cout << "Could not open file!\n";
@@ -142,13 +150,13 @@ int broadcast_on_udp(struct AudioConverter* ctx)
         size_t length = std::min(max_data_length, ctx->m_wav->audio_len - i);
         memcpy(buffer, sof, 12);
         // memcpy(&buffer[12], &ctx->m_wav->audio_bytes[i], max_data_length);
-        for(int i = 0 ; i < length/2 ; i++)
+        for(int j = 0 ; j < length/2 ; j++)
         {
-            buffer[2*i+12] = ctx->m_wav->audio_bytes[2*i+1];
+            buffer[2*j+12] = ctx->m_wav->audio_bytes[2*j+1+i];
         }
-        for(int i = 0 ; i < length/2 ; i++)
+        for(int j = 0 ; j < length/2 ; j++)
         {
-            buffer[2*i+13] = ctx->m_wav->audio_bytes[2*i];
+            buffer[2*j+13] = ctx->m_wav->audio_bytes[2*j+i];
         }
 
         sendto(sockfd, buffer, length+12, MSG_CONFIRM,
@@ -156,9 +164,10 @@ int broadcast_on_udp(struct AudioConverter* ctx)
         sequence_number++;
         timestamp += 120;
         if(ctx->m_delay > 0)
-            usleep(ctx->m_delay*1000);
+            usleep(2500);
     }
 
+    free(buffer);
     close(sockfd);
     return EXIT_SUCCESS;
 }
