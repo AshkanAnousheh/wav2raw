@@ -9,7 +9,13 @@
 #include <unistd.h>
 
 #define DEBUG 1
+#define USE_RTP_HEADER 1
 #define WAVE_HEADER_LEN 44
+
+#define BASH_RED_COLOR "\033[31m"
+#define BASH_GREEN_COLOR "\033[32m"
+#define BASH_YELLOW_COLOR "\033[33m"
+#define BASH_RESET_COLOR "\033[0m"
                                 //  2,3             4,5,6,7           8,9,10,11
 // A struct to hold the RIFF data of the WAV file
 struct WaveFile {
@@ -36,7 +42,7 @@ struct AudioConverter{
     std::string m_file;
     std::string m_ip;
     uint16_t m_port;
-    uint16_t m_delay;
+    uint32_t m_delay;
     struct WaveFile* m_wav;
 };
 
@@ -58,21 +64,13 @@ struct AudioConverter* init(int argc, char* argv[])
     std::cout << "File path: " << ctx->m_file << std::endl;
     std::cout << "IP: " << ctx->m_ip << std::endl;
     std::cout << "Port: " << ctx->m_port << std::endl;
-    std::cout << "Delay: " << ctx->m_delay << std::endl;
+    std::cout << "Delay (us): " << ctx->m_delay << std::endl;
 #endif
     return ctx;
 }
 
 int parse_audio(struct AudioConverter* ctx)
 {
-
-    // uint16_t t = 0;
-    // std::ofstream file2("t.bin", std::ios::binary | std::ios::out);
-    // for(t ; t < 0xFFFF ; t++)
-    // {
-    //     file2.write((char*)&t, 2);
-    // }
-    // file2.close();
 
     std::ifstream file(ctx->m_file, std::ios::binary | std::ios::in);
     if (!file.is_open()) {
@@ -94,7 +92,19 @@ int parse_audio(struct AudioConverter* ctx)
 #endif
 
     ctx->m_wav->audio_bytes = (char*) malloc(ctx->m_wav->audio_len);
+    if(ctx->m_wav->sample_rate != 48000)
+        std::cout << BASH_RED_COLOR << "Your sample rate is wrong!" << BASH_RESET_COLOR << std::endl;
+
+    if(ctx->m_wav->bit_depth != 16)
+        std::cout << BASH_RED_COLOR << "Your bit depth is wrong!" << BASH_RESET_COLOR << std::endl;
+
+    if(ctx->m_wav->audio_len % 2 != 0)
+        std::cout << BASH_RED_COLOR << "Your sound len is wrong!" << BASH_RESET_COLOR << std::endl;
+
     file.read(ctx->m_wav->audio_bytes, ctx->m_wav->audio_len);
+
+    for(size_t i = 0; i < ctx->m_wav->audio_len ; i+=2)
+        std::swap(ctx->m_wav->audio_bytes[i], ctx->m_wav->audio_bytes[i+1]);
 
     file.close();
 
@@ -134,6 +144,11 @@ int broadcast_on_udp(struct AudioConverter* ctx)
     char* buffer = (char*) malloc(max_data_length + sizeof(sof));
     
     for (size_t i = 0; i < ctx->m_wav->audio_len; i += max_data_length) {
+
+        size_t length = std::min(max_data_length, ctx->m_wav->audio_len - i);
+        
+#if defined(USE_RTP_HEADER)
+        
         sof[0] = 0x80;
         sof[1] = 0x60;
         sof[2] = (sequence_number&0xFF00)>>8;
@@ -142,29 +157,24 @@ int broadcast_on_udp(struct AudioConverter* ctx)
         sof[5] = (timestamp&0xFF0000)>>16;
         sof[6] = (timestamp&0xFF00)>>8;
         sof[7] = (timestamp&0xFF);
-        sof[8] = 0x80;
+        sof[8] = 0;
         sof[9] = 0;
         sof[10] = 0;
-        sof[11] = 0x80;
+        sof[11] = 96;
         
-        size_t length = std::min(max_data_length, ctx->m_wav->audio_len - i);
+        length += 12;
+        
         memcpy(buffer, sof, 12);
-        // memcpy(&buffer[12], &ctx->m_wav->audio_bytes[i], max_data_length);
-        for(int j = 0 ; j < length/2 ; j++)
-        {
-            buffer[2*j+12] = ctx->m_wav->audio_bytes[2*j+1+i];
-        }
-        for(int j = 0 ; j < length/2 ; j++)
-        {
-            buffer[2*j+13] = ctx->m_wav->audio_bytes[2*j+i];
-        }
-
-        sendto(sockfd, buffer, length+12, MSG_CONFIRM,
+        memcpy(&buffer[12], &ctx->m_wav->audio_bytes[i], max_data_length);
+#else
+        memcpy(&buffer, &ctx->m_wav->audio_bytes[i], max_data_length);
+#endif
+        sendto(sockfd, buffer, length, MSG_CONFIRM,
                (const struct sockaddr *) &server_addr, sizeof(server_addr));
         sequence_number++;
         timestamp += 120;
         if(ctx->m_delay > 0)
-            usleep(2500);
+            usleep(ctx->m_delay);
     }
 
     free(buffer);

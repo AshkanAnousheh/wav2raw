@@ -15,9 +15,9 @@ cmake -B build -S .
 cmake --build build
 
 # run it
-./build/wav2raw <file_path> <IP> <port> <delay between chunks>
+./build/wav2raw <file_path> <IP> <port> <delay between chunks in microsecond>
 
 # for example
-./build/wav2raw ./440hz_sine_16bit_48K.wav 127.0.0.1 12345 1
+./build/wav2raw ./440hz_sine_16bit_48K.wav 127.0.0.1 12345 1000
 
 ```
