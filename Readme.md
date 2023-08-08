@@ -20,4 +20,7 @@ cmake --build build
 # for example
 ./build/wav2raw ./440hz_sine_16bit_48K.wav 127.0.0.1 12345 1000
 
+# to schedule it in real-time mode inside linux this
+sudo chrt -f 99 ./build/wav2raw ./my.wav 192.168.8.40 510 2500
+
 ```
