@@ -9,7 +9,8 @@
 #include <unistd.h>
 
 #define DEBUG 1
-#define USE_RTP_HEADER 1
+#define USE_RTP_HEADER 0
+#define AUDIO_BIG_ENDIAN 0
 #define WAVE_HEADER_LEN 44
 
 #define BASH_RED_COLOR "\033[31m"
@@ -60,7 +61,7 @@ struct AudioConverter* init(int argc, char* argv[])
 
     ctx->m_wav = (struct WaveFile*) malloc(sizeof(struct WaveFile));
 
-#if defined(DEBUG)
+#if (DEBUG)
     std::cout << "File path: " << ctx->m_file << std::endl;
     std::cout << "IP: " << ctx->m_ip << std::endl;
     std::cout << "Port: " << ctx->m_port << std::endl;
@@ -80,7 +81,7 @@ int parse_audio(struct AudioConverter* ctx)
 
     file.read(reinterpret_cast<char*>(ctx->m_wav), WAVE_HEADER_LEN);
 
-#if defined(DEBUG)
+#if (DEBUG)
     std::cout << "** Header information of the file **" << std::endl;
     std::cout << "Header name: " << std::string(ctx->m_wav->riff_header,4) << std::endl;
     std::cout << "Wave name: " << std::string(ctx->m_wav->wave_header,4) << std::endl;
@@ -103,8 +104,10 @@ int parse_audio(struct AudioConverter* ctx)
 
     file.read(ctx->m_wav->audio_bytes, ctx->m_wav->audio_len);
 
+#if (AUDIO_BIG_ENDIAN)
     for(size_t i = 0; i < ctx->m_wav->audio_len ; i+=2)
         std::swap(ctx->m_wav->audio_bytes[i], ctx->m_wav->audio_bytes[i+1]);
+#endif 
 
     file.close();
 
@@ -147,7 +150,7 @@ int broadcast_on_udp(struct AudioConverter* ctx)
 
         size_t length = std::min(max_data_length, ctx->m_wav->audio_len - i);
         
-#if defined(USE_RTP_HEADER)
+#if (USE_RTP_HEADER)
         
         sof[0] = 0x80;
         sof[1] = 0x60;
@@ -167,7 +170,7 @@ int broadcast_on_udp(struct AudioConverter* ctx)
         memcpy(buffer, sof, 12);
         memcpy(&buffer[12], &ctx->m_wav->audio_bytes[i], max_data_length);
 #else
-        memcpy(&buffer, &ctx->m_wav->audio_bytes[i], max_data_length);
+        memcpy(buffer, &ctx->m_wav->audio_bytes[i], max_data_length);
 #endif
         sendto(sockfd, buffer, length, MSG_CONFIRM,
                (const struct sockaddr *) &server_addr, sizeof(server_addr));
