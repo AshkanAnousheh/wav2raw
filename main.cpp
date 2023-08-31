@@ -53,12 +53,16 @@ struct AudioConverter* init(int argc, char* argv[])
     // arguments would be like this:
     // audio_file_path ip port delay
     if( (argc != 5) && (argc!=3) ) return NULL;
+    std::cout << BASH_RED_COLOR << "Debug -1 !" << BASH_RESET_COLOR << std::endl;
+
     struct AudioConverter* ctx = (struct AudioConverter*) malloc(sizeof(struct AudioConverter));
+    if(ctx == NULL) return NULL;
     memset(ctx, 0, sizeof(struct AudioConverter));
-    ctx->m_ip = "";
-    ctx->m_out_file = "";
+    // ctx->m_ip = "";
+    // ctx->m_out_file = "";
 
     ctx->m_in_file = argv[1];
+
     if(argc == 3)
     {
         ctx->m_out_file = argv[2];
@@ -78,6 +82,7 @@ struct AudioConverter* init(int argc, char* argv[])
     std::cout << "Delay (us): " << ctx->m_delay << std::endl;
     std::cout << "Output file: " << ctx->m_out_file << std::endl;
 #endif
+
     return ctx;
 }
 
@@ -127,8 +132,15 @@ int parse_audio(struct AudioConverter* ctx)
 
 int create_output_file(struct AudioConverter* ctx)
 {
-    std::ostream file(ctx->m_out_file,  std::ios::binary | std::ios::out);
-    
+
+    std::ofstream out_file(ctx->m_out_file,  std::ios::binary | std::ios::out);
+    // size_t data_len = ctx->m_wav->audio_len;
+    out_file.write(reinterpret_cast<char*>(ctx->m_wav), WAVE_HEADER_LEN);
+    out_file.write(ctx->m_wav->audio_bytes, ctx->m_wav->audio_len);
+    // std::cout << BASH_RED_COLOR << "Debug 2 !" << BASH_RESET_COLOR << std::endl;
+    out_file.close();
+
+    return EXIT_SUCCESS;
 }
 
 int broadcast_on_udp(struct AudioConverter* ctx)
@@ -237,13 +249,20 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    if(broadcast_on_udp(converter) != EXIT_SUCCESS)
+    // if(broadcast_on_udp(converter) != EXIT_SUCCESS)
+    // {
+    //     std::cerr << "Socket creation error" << std::endl;
+    //     free_converter(converter);
+    //     return EXIT_FAILURE;
+    // }
+    
+    if(create_output_file(converter) != EXIT_SUCCESS)
     {
-        std::cerr << "Socket creation error" << std::endl;
+        std::cerr << "Output file creation error" << std::endl;
         free_converter(converter);
         return EXIT_FAILURE;
     }
-    
+
     free_converter(converter);
     return EXIT_SUCCESS;
 }
