@@ -8,6 +8,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+#include "filter.h"
+
 #define DEBUG 1
 #define USE_RTP_HEADER 0
 #define AUDIO_BIG_ENDIAN 0
@@ -128,6 +130,25 @@ int parse_audio(struct AudioConverter* ctx)
     file.close();
 
     return EXIT_SUCCESS; 
+}
+
+int modify_audio_buffer(struct AudioConverter* ctx)
+{
+    int16_t* temp_buff = (int16_t*) malloc(ctx->m_wav->audio_len);
+
+    for (size_t i = 0; i < ctx->m_wav->audio_len/2; i+=2)
+    {
+        temp_buff[i/2] = (ctx->m_wav->audio_bytes[i]<<8) | ctx->m_wav->audio_bytes[i+1]; 
+    }
+
+    for (size_t i = 0; i < ctx->m_wav->audio_len/2; i+=2)
+    {
+        ctx->m_wav->audio_bytes[i] = (temp_buff[i/2] & 0xFF00) >> 8;
+        ctx->m_wav->audio_bytes[i+1] = temp_buff[i/2] & 0xFF;
+    }
+
+    free(temp_buff);
+    return EXIT_SUCCESS;
 }
 
 int create_output_file(struct AudioConverter* ctx)
@@ -255,7 +276,8 @@ int main(int argc, char* argv[]) {
     //     free_converter(converter);
     //     return EXIT_FAILURE;
     // }
-    
+    modify_audio_buffer(converter);
+
     if(create_output_file(converter) != EXIT_SUCCESS)
     {
         std::cerr << "Output file creation error" << std::endl;
