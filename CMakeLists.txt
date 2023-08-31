@@ -5,5 +5,5 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(wav2raw)
 
-add_executable(wav2raw main.cpp)
+add_executable(wav2raw main.cpp filter.cpp)
 target_link_libraries(wav2raw PRIVATE pthread)

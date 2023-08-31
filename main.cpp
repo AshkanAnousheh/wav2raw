@@ -136,15 +136,20 @@ int modify_audio_buffer(struct AudioConverter* ctx)
 {
     int16_t* temp_buff = (int16_t*) malloc(ctx->m_wav->audio_len);
 
-    for (size_t i = 0; i < ctx->m_wav->audio_len/2; i+=2)
+    for (size_t i = 0; i < ctx->m_wav->audio_len; i+=2)
     {
-        temp_buff[i/2] = (ctx->m_wav->audio_bytes[i]<<8) | ctx->m_wav->audio_bytes[i+1]; 
+        temp_buff[i/2] = (ctx->m_wav->audio_bytes[i+1]<<8) | ctx->m_wav->audio_bytes[i]; 
     }
 
-    for (size_t i = 0; i < ctx->m_wav->audio_len/2; i+=2)
+    for (size_t i = 0; i < ctx->m_wav->audio_len/2; i++)
     {
-        ctx->m_wav->audio_bytes[i] = (temp_buff[i/2] & 0xFF00) >> 8;
-        ctx->m_wav->audio_bytes[i+1] = temp_buff[i/2] & 0xFF;
+        temp_buff[i] = filter(temp_buff[i]);
+    }
+
+    for (size_t i = 0; i < ctx->m_wav->audio_len; i+=2)
+    {
+        ctx->m_wav->audio_bytes[i+1] = (temp_buff[i/2] & 0xFF00) >> 8;
+        ctx->m_wav->audio_bytes[i] = temp_buff[i/2] & 0xFF;
     }
 
     free(temp_buff);
