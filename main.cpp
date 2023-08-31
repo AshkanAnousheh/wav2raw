@@ -40,32 +40,43 @@ struct WaveFile {
 };
 
 struct AudioConverter{
-    std::string m_file;
+    std::string m_in_file;
     std::string m_ip;
     uint16_t m_port;
     uint32_t m_delay;
     struct WaveFile* m_wav;
+    std::string m_out_file;
 };
 
 struct AudioConverter* init(int argc, char* argv[])
 {
     // arguments would be like this:
     // audio_file_path ip port delay
-    if(argc != 5) return NULL;
+    if( (argc != 5) && (argc!=3) ) return NULL;
     struct AudioConverter* ctx = (struct AudioConverter*) malloc(sizeof(struct AudioConverter));
+    memset(ctx, 0, sizeof(struct AudioConverter));
+    ctx->m_ip = "";
+    ctx->m_out_file = "";
 
-    ctx->m_file = argv[1];
-    ctx->m_ip = argv[2];
-    ctx->m_port = std::atoi( argv[3] );
-    ctx->m_delay = std::atoi( argv[4] );
-
+    ctx->m_in_file = argv[1];
+    if(argc == 3)
+    {
+        ctx->m_out_file = argv[2];
+    }
+    else
+    {
+        ctx->m_ip = argv[2];
+        ctx->m_port = std::atoi( argv[3] );
+        ctx->m_delay = std::atoi( argv[4] );
+    }
     ctx->m_wav = (struct WaveFile*) malloc(sizeof(struct WaveFile));
 
 #if (DEBUG)
-    std::cout << "File path: " << ctx->m_file << std::endl;
+    std::cout << "File path: " << ctx->m_in_file << std::endl;
     std::cout << "IP: " << ctx->m_ip << std::endl;
     std::cout << "Port: " << ctx->m_port << std::endl;
     std::cout << "Delay (us): " << ctx->m_delay << std::endl;
+    std::cout << "Output file: " << ctx->m_out_file << std::endl;
 #endif
     return ctx;
 }
@@ -73,7 +84,7 @@ struct AudioConverter* init(int argc, char* argv[])
 int parse_audio(struct AudioConverter* ctx)
 {
 
-    std::ifstream file(ctx->m_file, std::ios::binary | std::ios::in);
+    std::ifstream file(ctx->m_in_file, std::ios::binary | std::ios::in);
     if (!file.is_open()) {
         std::cout << "Could not open file!\n";
         return EXIT_FAILURE;
@@ -112,6 +123,12 @@ int parse_audio(struct AudioConverter* ctx)
     file.close();
 
     return EXIT_SUCCESS; 
+}
+
+int create_output_file(struct AudioConverter* ctx)
+{
+    std::ostream file(ctx->m_out_file,  std::ios::binary | std::ios::out);
+    
 }
 
 int broadcast_on_udp(struct AudioConverter* ctx)
