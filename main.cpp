@@ -21,13 +21,12 @@
 #define BASH_RESET_COLOR "\033[0m"
                                 //  2,3             4,5,6,7           8,9,10,11
 // A struct to hold the RIFF data of the WAV file
-
-int broadcast_on_udp(struct AudioContext* ctx);
-int create_output_file(struct AudioConverter* ctx);
-
 struct AudioContext;
 
-typedef int (*InputArgHandler)(struct AudioContext* ctx, int argc, char* argv[]);
+int broadcast_on_udp(struct AudioContext* ctx);
+int create_output_file(struct AudioContext* ctx);
+
+
 typedef int (*OutputHandler)(struct AudioContext* ctx);
 typedef int (*ProcessHandler)(struct AudioContext* ctx);
 
@@ -60,51 +59,11 @@ struct StreamConfig
 };
 
 struct AudioContext{
-    InputArgHandler handle_input;
     OutputHandler handle_output;
-    ProcessHandler run;
+    ProcessHandler handle_filter;
     struct WaveFile* m_wav;
     struct StreamConfig* m_conf;
 };
-
-int handle_udp_arguments(struct AudioContext* ctx, int argc, char* argv[])
-{
-    if((argc != 5)) return EXIT_FAILURE;
-    if(ctx == NULL) return EXIT_FAILURE;
-    ctx->m_conf->m_in_file = argv[1];
-    ctx->m_conf->m_ip = argv[2];
-    ctx->m_conf->m_port = std::atoi( argv[3] );
-    ctx->m_conf->m_delay = std::atoi( argv[4] );
-    ctx->m_wav = (struct WaveFile*) malloc(sizeof(struct WaveFile));
-#if (DEBUG)
-    std::cout << BASH_RED_COLOR << "UDP related arguments! " << BASH_RESET_COLOR << std::endl;
-    std::cout << "File path: " << ctx->m_conf->m_in_file << std::endl;
-    std::cout << "IP: " << ctx->m_conf->m_ip << std::endl;
-    std::cout << "Port: " << ctx->m_conf->m_port << std::endl;
-    std::cout << "Delay (us): " << ctx->m_conf->m_delay << std::endl;
-#endif
-    if(ctx->m_wav == NULL) return EXIT_FAILURE;
-
-    return EXIT_SUCCESS;
-}
-
-int handle_file_arguments(struct AudioContext* ctx, int argc, char* argv[])
-{
-    if((argc != 3)) return EXIT_FAILURE;
-    if(ctx == NULL) return EXIT_FAILURE;
-    ctx->m_conf->m_in_file = argv[1];
-    ctx->m_conf->m_out_file = argv[2];
-    ctx->m_wav = (struct WaveFile*) malloc(sizeof(struct WaveFile));
-#if (DEBUG)
-    std::cout << BASH_RED_COLOR << "File related arguments! " << BASH_RESET_COLOR << std::endl;
-    std::cout << "File path: " << ctx->m_conf->m_in_file << std::endl;
-    std::cout << "Output file: " << ctx->m_conf->m_out_file << std::endl;
-#endif
-
-    if(ctx->m_wav == NULL) return EXIT_FAILURE;
-
-    return EXIT_SUCCESS;
-}
 
 int parse_audio(struct AudioContext* ctx)
 {
@@ -150,8 +109,9 @@ int parse_audio(struct AudioContext* ctx)
     return EXIT_SUCCESS; 
 }
 
-int modify_audio_buffer(struct AudioContext* ctx)
+int apply_filter(struct AudioContext* ctx)
 {
+    std::cout << BASH_GREEN_COLOR << "Apply filtering..." << BASH_RESET_COLOR << std::endl;
     int16_t* temp_buff = (int16_t*) malloc(ctx->m_wav->audio_len);
 
     for (size_t i = 0; i < ctx->m_wav->audio_len; i+=2)
@@ -176,6 +136,7 @@ int modify_audio_buffer(struct AudioContext* ctx)
 
 int create_output_file(struct AudioContext* ctx)
 {
+    std::cout << BASH_GREEN_COLOR << "Creating output file..." << BASH_RESET_COLOR << std::endl;
 
     std::ofstream out_file(ctx->m_conf->m_out_file,  std::ios::binary | std::ios::out);
     // size_t data_len = ctx->m_wav->audio_len;
@@ -192,6 +153,7 @@ int broadcast_on_udp(struct AudioContext* ctx)
 
     int sockfd;
     struct sockaddr_in server_addr;
+    std::cout << BASH_GREEN_COLOR << "Broadcasting on UDP..." << BASH_RESET_COLOR << std::endl;
 
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("socket creation failed");
@@ -258,65 +220,46 @@ int broadcast_on_udp(struct AudioContext* ctx)
     return EXIT_SUCCESS;
 }
 
-int free_converter(struct AudioContext* ctx)
-{
-    if(ctx != NULL)
-    {
-        if(ctx->m_wav != NULL)
-        {
-            if(ctx->m_wav->audio_bytes != NULL)
-            {
-                free(ctx->m_wav->audio_bytes);
-            }
-            free(ctx->m_wav);
-        }
-        free(ctx);
-    }
-    return EXIT_SUCCESS;
-}
 
 int main(int argc, char* argv[]) {
-
     
-    AudioContext audio_context;
-    audio_context.handle_input = handle_file_arguments;
-    audio_context.m_conf = NULL;
-    audio_context.m_wav = NULL;
-    audio_context.run = modify_audio_buffer;
-    audio_context.handle_output = create_output_file;
+    struct AudioContext audio_context;
+    struct StreamConfig config;
+    struct WaveFile wave_file;
 
-    auto converter =  audio_context.handle_input(&audio_context, argc, argv);
-    if(converter == EXIT_FAILURE)
+    if(argc < 3)
     {
-        std::cerr << "Invalid argument number" << std::endl;
-        free_converter(&audio_context);
+        std::cerr << "Arg number error" << std::endl;
         return EXIT_FAILURE;
     }
 
-    auto parsed_audio = parse_audio(&audio_context);
-    if(parsed_audio != 0)
+    audio_context.m_conf = &config;
+    audio_context.handle_filter = apply_filter;
+    audio_context.m_wav = &wave_file;
+
+
+    std::string output_type = argv[1];
+    
+    if(output_type == "udp")
     {
-        std::cerr << "Invalid file" << std::endl;
-        free_converter(&audio_context);
-        return EXIT_FAILURE;
+        audio_context.handle_output = broadcast_on_udp;
+        audio_context.m_conf->m_in_file = argv[2];
+        audio_context.m_conf->m_ip = argv[3];
+        audio_context.m_conf->m_port = std::atoi( argv[4] );
+        audio_context.m_conf->m_delay = std::atoi( argv[5] );
+    }
+    else if( output_type == "file")
+    {
+        audio_context.handle_output = create_output_file;
+        audio_context.m_conf->m_in_file = argv[2];
+        audio_context.m_conf->m_out_file = argv[3];
     }
 
-    // if(broadcast_on_udp(converter) != EXIT_SUCCESS)
-    // {
-    //     std::cerr << "Socket creation error" << std::endl;
-    //     free_converter(converter);
-    //     return EXIT_FAILURE;
-    // }
-    // modify_audio_buffer(converter);
-    audio_context.run(&audio_context);
+    int res = parse_audio( &audio_context );
 
-    if(audio_context.handle_output(&audio_context) != EXIT_SUCCESS)
-    {
-        std::cerr << "Output file creation error" << std::endl;
-        free_converter(&audio_context);
-        return EXIT_FAILURE;
-    }
+    res = audio_context.handle_filter(&audio_context);
 
-    free_converter(&audio_context);
+    res = audio_context.handle_output(&audio_context);
+
     return EXIT_SUCCESS;
 }
