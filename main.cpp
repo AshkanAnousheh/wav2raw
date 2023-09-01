@@ -21,6 +21,16 @@
 #define BASH_RESET_COLOR "\033[0m"
                                 //  2,3             4,5,6,7           8,9,10,11
 // A struct to hold the RIFF data of the WAV file
+
+int broadcast_on_udp(struct AudioContext* ctx);
+int create_output_file(struct AudioConverter* ctx);
+
+struct AudioContext;
+
+typedef int (*InputArgHandler)(struct AudioContext* ctx, int argc, char* argv[]);
+typedef int (*OutputHandler)(struct AudioContext* ctx);
+typedef int (*ProcessHandler)(struct AudioContext* ctx);
+
 struct WaveFile {
     char riff_header[4]; // Contains "RIFF"
     int wav_size; // Size of the wav portion of the file, which follows the first 8 bytes. File size - 8
@@ -41,57 +51,65 @@ struct WaveFile {
     char* audio_bytes;
 };
 
-struct AudioConverter{
-    std::string m_in_file;
+struct StreamConfig
+{
+    std::string m_in_file, m_out_file;
     std::string m_ip;
     uint16_t m_port;
     uint32_t m_delay;
-    struct WaveFile* m_wav;
-    std::string m_out_file;
 };
 
-struct AudioConverter* init(int argc, char* argv[])
+struct AudioContext{
+    InputArgHandler handle_input;
+    OutputHandler handle_output;
+    ProcessHandler run;
+    struct WaveFile* m_wav;
+    struct StreamConfig* m_conf;
+};
+
+int handle_udp_arguments(struct AudioContext* ctx, int argc, char* argv[])
 {
-    // arguments would be like this:
-    // audio_file_path ip port delay
-    if( (argc != 5) && (argc!=3) ) return NULL;
-    std::cout << BASH_RED_COLOR << "Debug -1 !" << BASH_RESET_COLOR << std::endl;
-
-    struct AudioConverter* ctx = (struct AudioConverter*) malloc(sizeof(struct AudioConverter));
-    if(ctx == NULL) return NULL;
-    memset(ctx, 0, sizeof(struct AudioConverter));
-    // ctx->m_ip = "";
-    // ctx->m_out_file = "";
-
-    ctx->m_in_file = argv[1];
-
-    if(argc == 3)
-    {
-        ctx->m_out_file = argv[2];
-    }
-    else
-    {
-        ctx->m_ip = argv[2];
-        ctx->m_port = std::atoi( argv[3] );
-        ctx->m_delay = std::atoi( argv[4] );
-    }
+    if((argc != 5)) return EXIT_FAILURE;
+    if(ctx == NULL) return EXIT_FAILURE;
+    ctx->m_conf->m_in_file = argv[1];
+    ctx->m_conf->m_ip = argv[2];
+    ctx->m_conf->m_port = std::atoi( argv[3] );
+    ctx->m_conf->m_delay = std::atoi( argv[4] );
     ctx->m_wav = (struct WaveFile*) malloc(sizeof(struct WaveFile));
-
 #if (DEBUG)
-    std::cout << "File path: " << ctx->m_in_file << std::endl;
-    std::cout << "IP: " << ctx->m_ip << std::endl;
-    std::cout << "Port: " << ctx->m_port << std::endl;
-    std::cout << "Delay (us): " << ctx->m_delay << std::endl;
-    std::cout << "Output file: " << ctx->m_out_file << std::endl;
+    std::cout << BASH_RED_COLOR << "UDP related arguments! " << BASH_RESET_COLOR << std::endl;
+    std::cout << "File path: " << ctx->m_conf->m_in_file << std::endl;
+    std::cout << "IP: " << ctx->m_conf->m_ip << std::endl;
+    std::cout << "Port: " << ctx->m_conf->m_port << std::endl;
+    std::cout << "Delay (us): " << ctx->m_conf->m_delay << std::endl;
 #endif
+    if(ctx->m_wav == NULL) return EXIT_FAILURE;
 
-    return ctx;
+    return EXIT_SUCCESS;
 }
 
-int parse_audio(struct AudioConverter* ctx)
+int handle_file_arguments(struct AudioContext* ctx, int argc, char* argv[])
+{
+    if((argc != 3)) return EXIT_FAILURE;
+    if(ctx == NULL) return EXIT_FAILURE;
+    ctx->m_conf->m_in_file = argv[1];
+    ctx->m_conf->m_out_file = argv[2];
+    ctx->m_wav = (struct WaveFile*) malloc(sizeof(struct WaveFile));
+#if (DEBUG)
+    std::cout << BASH_RED_COLOR << "File related arguments! " << BASH_RESET_COLOR << std::endl;
+    std::cout << "File path: " << ctx->m_conf->m_in_file << std::endl;
+    std::cout << "Output file: " << ctx->m_conf->m_out_file << std::endl;
+#endif
+
+    if(ctx->m_wav == NULL) return EXIT_FAILURE;
+
+    return EXIT_SUCCESS;
+}
+
+int parse_audio(struct AudioContext* ctx)
 {
 
-    std::ifstream file(ctx->m_in_file, std::ios::binary | std::ios::in);
+    std::ifstream file(ctx->m_conf->m_in_file, std::ios::binary | std::ios::in);
     if (!file.is_open()) {
         std::cout << "Could not open file!\n";
         return EXIT_FAILURE;
@@ -132,7 +150,7 @@ int parse_audio(struct AudioConverter* ctx)
     return EXIT_SUCCESS; 
 }
 
-int modify_audio_buffer(struct AudioConverter* ctx)
+int modify_audio_buffer(struct AudioContext* ctx)
 {
     int16_t* temp_buff = (int16_t*) malloc(ctx->m_wav->audio_len);
 
@@ -156,10 +174,10 @@ int modify_audio_buffer(struct AudioConverter* ctx)
     return EXIT_SUCCESS;
 }
 
-int create_output_file(struct AudioConverter* ctx)
+int create_output_file(struct AudioContext* ctx)
 {
 
-    std::ofstream out_file(ctx->m_out_file,  std::ios::binary | std::ios::out);
+    std::ofstream out_file(ctx->m_conf->m_out_file,  std::ios::binary | std::ios::out);
     // size_t data_len = ctx->m_wav->audio_len;
     out_file.write(reinterpret_cast<char*>(ctx->m_wav), WAVE_HEADER_LEN);
     out_file.write(ctx->m_wav->audio_bytes, ctx->m_wav->audio_len);
@@ -169,7 +187,7 @@ int create_output_file(struct AudioConverter* ctx)
     return EXIT_SUCCESS;
 }
 
-int broadcast_on_udp(struct AudioConverter* ctx)
+int broadcast_on_udp(struct AudioContext* ctx)
 {
 
     int sockfd;
@@ -182,9 +200,9 @@ int broadcast_on_udp(struct AudioConverter* ctx)
 
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(ctx->m_port); // port number
+    server_addr.sin_port = htons(ctx->m_conf->m_port); // port number
 
-    if(inet_pton(AF_INET, ctx->m_ip.c_str() , &server_addr.sin_addr.s_addr) <= 0)
+    if(inet_pton(AF_INET, ctx->m_conf->m_ip.c_str() , &server_addr.sin_addr.s_addr) <= 0)
     {
         std::cerr << "Invalid IP address" << std::endl;
         return EXIT_FAILURE;
@@ -231,8 +249,8 @@ int broadcast_on_udp(struct AudioConverter* ctx)
                (const struct sockaddr *) &server_addr, sizeof(server_addr));
         sequence_number++;
         timestamp += 120;
-        if(ctx->m_delay > 0)
-            usleep(ctx->m_delay);
+        if(ctx->m_conf->m_delay > 0)
+            usleep(ctx->m_conf->m_delay);
     }
 
     free(buffer);
@@ -240,7 +258,7 @@ int broadcast_on_udp(struct AudioConverter* ctx)
     return EXIT_SUCCESS;
 }
 
-int free_converter(struct AudioConverter* ctx)
+int free_converter(struct AudioContext* ctx)
 {
     if(ctx != NULL)
     {
@@ -259,19 +277,27 @@ int free_converter(struct AudioConverter* ctx)
 
 int main(int argc, char* argv[]) {
 
-    auto converter = init(argc, argv);
-    if(converter == NULL)
+    
+    AudioContext audio_context;
+    audio_context.handle_input = handle_file_arguments;
+    audio_context.m_conf = NULL;
+    audio_context.m_wav = NULL;
+    audio_context.run = modify_audio_buffer;
+    audio_context.handle_output = create_output_file;
+
+    auto converter =  audio_context.handle_input(&audio_context, argc, argv);
+    if(converter == EXIT_FAILURE)
     {
         std::cerr << "Invalid argument number" << std::endl;
-        free_converter(converter);
+        free_converter(&audio_context);
         return EXIT_FAILURE;
     }
 
-    auto parsed_audio = parse_audio(converter);
+    auto parsed_audio = parse_audio(&audio_context);
     if(parsed_audio != 0)
     {
         std::cerr << "Invalid file" << std::endl;
-        free_converter(converter);
+        free_converter(&audio_context);
         return EXIT_FAILURE;
     }
 
@@ -281,15 +307,16 @@ int main(int argc, char* argv[]) {
     //     free_converter(converter);
     //     return EXIT_FAILURE;
     // }
-    modify_audio_buffer(converter);
+    // modify_audio_buffer(converter);
+    audio_context.run(&audio_context);
 
-    if(create_output_file(converter) != EXIT_SUCCESS)
+    if(audio_context.handle_output(&audio_context) != EXIT_SUCCESS)
     {
         std::cerr << "Output file creation error" << std::endl;
-        free_converter(converter);
+        free_converter(&audio_context);
         return EXIT_FAILURE;
     }
 
-    free_converter(converter);
+    free_converter(&audio_context);
     return EXIT_SUCCESS;
 }
